@@ -1,4 +1,3 @@
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
@@ -13,10 +12,33 @@ from app.services.audit_service import create_audit_log
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-@router.post("/login", response_model=Token)
+@router.post(
+    "/login",
+    response_model=Token,
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "$ref": "#/components/schemas/LoginRequest"
+                    }
+                },
+                "application/x-www-form-urlencoded": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "username": {"type": "string"},
+                            "password": {"type": "string"},
+                        },
+                        "required": ["username", "password"],
+                    }
+                },
+            }
+        }
+    },
+)
 async def login(
     request: Request,
-    login_data: Optional[LoginRequest] = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -25,22 +47,31 @@ async def login(
     email = None
     password = None
 
-    # 1. Try reading from typed JSON model
-    if login_data and login_data.email and login_data.password:
-        email = str(login_data.email).strip().lower()
-        password = login_data.password
+    content_type = request.headers.get("content-type", "").lower()
 
-    # 2. If not provided via JSON model, parse request body / form
-    if not email or not password:
-        content_type = request.headers.get("content-type", "").lower()
-        if "application/json" in content_type:
-            try:
-                body = await request.json()
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
                 email = body.get("email") or body.get("username")
                 password = body.get("password")
-            except Exception:
-                pass
-        else:
+        except Exception:
+            pass
+    elif "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
+        try:
+            form = await request.form()
+            email = form.get("username") or form.get("email")
+            password = form.get("password")
+        except Exception:
+            pass
+    else:
+        # Fallback: attempt json then form
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                email = body.get("email") or body.get("username")
+                password = body.get("password")
+        except Exception:
             try:
                 form = await request.form()
                 email = form.get("username") or form.get("email")

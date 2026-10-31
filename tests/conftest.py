@@ -183,13 +183,14 @@ def db_session() -> Generator[Session, None, None]:
 
 
 @pytest.fixture
-def client(db_session: Session) -> Generator[TestClient, None, None]:
-    """TestClient bound directly to FastAPI app with get_db dependency override."""
+def client() -> Generator[TestClient, None, None]:
+    """TestClient bound directly to FastAPI app with thread-safe get_db dependency override."""
     def override_get_db():
+        session = TestingSessionLocal()
         try:
-            yield db_session
+            yield session
         finally:
-            pass
+            session.close()
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:

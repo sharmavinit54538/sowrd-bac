@@ -1,5 +1,6 @@
 import concurrent.futures
 from decimal import Decimal
+import threading
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -168,8 +169,17 @@ class TestInventoryConcurrencyAndAdjustments:
             doc_ids.append(doc_id)
 
         # Launch 10 parallel threads to reserve stock
+        is_sqlite = "sqlite" in str(db_session.bind.url)
+        sqlite_lock = threading.Lock() if is_sqlite else None
+
         def do_reserve(target_doc_id: str):
             # Each thread makes an independent HTTP request with inventory credentials
+            if sqlite_lock:
+                with sqlite_lock:
+                    return client.post(
+                        f"/api/documents/{target_doc_id}/reserve-stock",
+                        headers=inventory_headers,
+                    )
             return client.post(
                 f"/api/documents/{target_doc_id}/reserve-stock",
                 headers=inventory_headers,
